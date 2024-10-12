@@ -38,7 +38,7 @@ const finalValidFocusPoint = ref({
 });
 
 const isFocusLost = ref(false);
-const generateFocusPointTargetX = () => {
+/* const generateFocusPointTargetX = () => {
   const border = safeBorderSize.value + eyeWidth.value + eyeSpacing.value / 2;
   if (!x.value) {
     if (finalValidFocusPoint.value.x === initialFocusPoint.value.x) return initialFocusPoint.value.x;
@@ -115,19 +115,10 @@ const generateFocusPointTargetY = () => {
   }
   finalValidFocusPoint.value.y = y.value;
   return y.value;
-}
+} */
 
-/* // 目标焦点位置
-const focusPointTargetX = computed(generateFocusPointTargetX);
-const focusPointTargetY = computed(generateFocusPointTargetY);
-
-// 当前焦点位置
-const focusPointX = ref(initialFocusPoint.value.x);
-const focusPointY = ref(initialFocusPoint.value.y); */
-
-// 测试
-const focusPointX = computed(() => x.value || finalValidFocusPoint.value.x);
-const focusPointY = computed(() => y.value || finalValidFocusPoint.value.y);
+const focusPointX = ref(finalValidFocusPoint.value.x);
+const focusPointY = ref(finalValidFocusPoint.value.y);
 
 const lastMark = ref({
   time: 0,
@@ -137,18 +128,93 @@ const markWork = ref(() => { })
 const markInterval = 3000;
 
 const pupilFocusDistance = computed(() => eyeSpacing.value / 2 + eyeWidth.value / 2);
-const leftEyeX = computed(() => focusPointX.value - pupilFocusDistance.value);
-const rightEyeX = computed(() => focusPointX.value + pupilFocusDistance.value);
 
 const blinkProbability = 0.999;
 const blinkSpeed = 0.05;
 
 let animationFrameId = null;
 
+const controlPoints = ref([]);
+
+const putInRange = (value, min, max) => {
+  return Math.max(min, Math.min(max, value))};
+
+const generateFocusPointTarget = () => {
+  const widthBorder = safeBorderSize.value + eyeWidth.value + eyeSpacing.value / 2;
+  const heightBorder = safeBorderSize.value + eyeHeight.value / 2;
+
+  if (!x.value || !y.value) {
+    if (finalValidFocusPoint.value.x === initialFocusPoint.value.x && finalValidFocusPoint.value.y === initialFocusPoint.value.y) return initialFocusPoint.value;
+    if (lastMark.value.reason != 'overflow') {
+      lastMark.value.reason = 'overflow';
+      lastMark.value.time = Date.now();
+      markWork.value = () => {
+        finalValidFocusPoint.value.x = initialFocusPoint.value.x;
+        finalValidFocusPoint.value.y = initialFocusPoint.value.y;
+        isFocusLost.value = true;
+      }
+    }
+    return finalValidFocusPoint.value;
+  }
+  if ((x.value - widthBorder) <= 0 || (canvasWidth.value - widthBorder - x.value) <= 0 || (y.value - heightBorder) <= 0 || (canvasHeight.value - heightBorder - y.value) <= 0) {
+    if (lastMark.value.reason != 'overflow') {
+      lastMark.value.reason = 'overflow';
+      lastMark.value.time = Date.now();
+      markWork.value = () => {
+        finalValidFocusPoint.value.x = initialFocusPoint.value.x;
+        finalValidFocusPoint.value.y = initialFocusPoint.value.y;
+        isFocusLost.value = true;
+      }
+    }
+    const isYMove = putInRange(x.value, widthBorder, canvasWidth.value - widthBorder) === focusPointX.value;
+    const isXMove = putInRange(y.value, heightBorder, canvasHeight.value - heightBorder) === focusPointY.value;
+    const isTop = y.value < focusPointY.value;
+    const isRight = x.value > focusPointX.value;
+    if (isYMove || isXMove || (isRight && x.value + widthBorder >= canvasWidth.value - 5) || (!isRight && x.value <= widthBorder + 5)) {
+      finalValidFocusPoint.value.y = putInRange(y.value, heightBorder, canvasHeight.value - heightBorder);
+      finalValidFocusPoint.value.x = putInRange(x.value, widthBorder, canvasWidth.value - widthBorder);
+      return finalValidFocusPoint.value;
+    }
+    const traceSlope = Math.abs((y.value - focusPointY.value) / (x.value - focusPointX.value));
+    const safeSlope = Math.abs((isTop ? heightBorder - focusPointY.value : canvasHeight.value - heightBorder - focusPointY.value) / (isRight ? canvasWidth.value - widthBorder - focusPointX.value : widthBorder - focusPointX.value));
+    if (traceSlope === safeSlope) {
+      finalValidFocusPoint.value.x = putInRange(x.value, widthBorder, canvasWidth.value - widthBorder);
+      finalValidFocusPoint.value.y = putInRange(y.value, heightBorder, canvasHeight.value - heightBorder);
+    } else if (isTop) {
+      if (traceSlope > safeSlope) {
+        finalValidFocusPoint.value.y = heightBorder;
+        finalValidFocusPoint.value.x = focusPointX.value + (focusPointY.value - finalValidFocusPoint.value.y) * (isRight ? 1 : -1) / traceSlope;
+      } else {
+        finalValidFocusPoint.value.x = isRight ? canvasWidth.value - widthBorder : widthBorder;
+        finalValidFocusPoint.value.y = focusPointY.value - (finalValidFocusPoint.value.x - focusPointX.value) * (isRight ? 1 : -1) * traceSlope;
+      }
+    } else {
+      if (traceSlope > safeSlope) {
+        finalValidFocusPoint.value.y = canvasHeight.value - heightBorder;
+        finalValidFocusPoint.value.x = focusPointX.value + (finalValidFocusPoint.value.y - focusPointY.value) * (isRight ? 1 : -1) / traceSlope;
+      } else {
+        finalValidFocusPoint.value.x = isRight ? canvasWidth.value - widthBorder : widthBorder;
+        finalValidFocusPoint.value.y = focusPointY.value + (finalValidFocusPoint.value.x - focusPointX.value) * (isRight ? 1 : -1) * traceSlope;
+      }
+    }
+    return finalValidFocusPoint.value;
+  }
+  finalValidFocusPoint.value.x = x.value;
+  finalValidFocusPoint.value.y = y.value;
+  if (lastMark.value.reason === 'overflow') {
+    lastMark.value = {
+      time: 0,
+      reason: null
+    };
+    isFocusLost.value = false;
+  }
+  return finalValidFocusPoint.value;
+}
+
 const drawCatEyes = () => {
   if (!ctx.value) return;
 
-  if (lastMark.value.time != 0 &&  Date.now() - lastMark.value.time >= markInterval) {
+  if (lastMark.value.time != 0 && Date.now() - lastMark.value.time >= markInterval) {
     markWork.value();
     lastMark.value = {
       time: 0,
@@ -157,21 +223,21 @@ const drawCatEyes = () => {
   };
   // 清空画布
   ctx.value.clearRect(0, 0, canvasWidth.value, canvasHeight.value);
-
+  const targetFocusPoint = generateFocusPointTarget();
+  focusPointX.value = targetFocusPoint.x
+  focusPointY.value = targetFocusPoint.y
   // 绘制眼睛
-  drawEye(true);
-  drawEye(false);
+  drawEye(finalValidFocusPoint.value, true);
+  drawEye(finalValidFocusPoint.value, false);
 };
 
-const controlPoints = ref([]);
-
-const drawEye = (isLeftEye) => {
+const drawEye = (targetFocusPoint, isLeftEye) => {
   ctx.value.save();
   if (isLeftEye) {
-    ctx.value.translate(leftEyeX.value, focusPointY.value);
-    ctx.value.scale(-1, 1); // 右眼水平翻转
+    ctx.value.translate(targetFocusPoint.x - pupilFocusDistance.value, targetFocusPoint.y);
+    ctx.value.scale(-1, 1); // 左眼水平翻转
   } else {
-    ctx.value.translate(rightEyeX.value, focusPointY.value);
+    ctx.value.translate(targetFocusPoint.x + pupilFocusDistance.value, targetFocusPoint.y);
   }
 
   const srcControlPoints = [
