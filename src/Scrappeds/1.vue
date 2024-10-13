@@ -217,14 +217,12 @@ const generateFocusPointTarget = () => {
 
 const pupilWidth = computed(() => eyeWidth.value * 0.16);
 const pupilHeight = computed(() => eyeHeight.value * 0.8);
-const pupilOffsetLimitX = [-0.4, 1.4];
-const pupilOffsetLimitY = [-0.06, 1];
+const pupilOffsetLimitX = [0.9, -0.9];
+const pupilOffsetLimitY = [0.08, -0.08];
 const pupilOffsetXDefault = -0.5;
 const pupilOffsetYDefault = -0.02;
-const pupilOffsetDeltaX = ref(0);
-const pupilOffsetDeltaY = ref(0);
-const pupilOffsetX = computed(() => pupilOffsetXDefault + pupilOffsetDeltaX.value);
-const pupilOffsetY = computed(() => pupilOffsetYDefault + pupilOffsetDeltaY.value);
+const pupilOffsetX = ref(pupilOffsetXDefault);
+const pupilOffsetY = ref(pupilOffsetYDefault);
 
 const eyeTraceCount = ref(0)
 const eyeTraceInterval = 8000;
@@ -311,9 +309,14 @@ const drawCatEyes = () => {
   drawEye(targetFocusPoint, false);
 };
 
-const drawEye = (targetFocusPoint) => {
+const drawEye = (targetFocusPoint, isLeftEye) => {
   ctx.value.save();
-  ctx.value.translate(targetFocusPoint.x + pupilFocusDistance.value, targetFocusPoint.y);
+  if (isLeftEye) {
+    ctx.value.translate(targetFocusPoint.x - pupilFocusDistance.value, targetFocusPoint.y);
+    ctx.value.scale(-1, 1); // 左眼水平翻转
+  } else {
+    ctx.value.translate(targetFocusPoint.x + pupilFocusDistance.value, targetFocusPoint.y);
+  }
 
   const srcControlPoints = [
     { x: eyeWidth.value * -0.4, y: eyeHeight.value * -0.6 },
@@ -357,6 +360,21 @@ const drawEye = (targetFocusPoint) => {
   ctx.value.ellipse(pupilWidth.value * pupilOffsetX.value, eyeHeight.value * pupilOffsetY.value, pupilWidth.value / 2, pupilHeight.value / 2, 0, 0, 2 * Math.PI);
   ctx.value.fill();
   ctx.value.globalCompositeOperation = 'source-over';
+  /*   ctx.fillStyle = 'red'; // 使用红色使控制点更加明显
+    ctx.beginPath();
+    controlPoints.value.forEach(point => {
+      ctx.moveTo(point.x, point.y);
+      ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+    });
+    ctx.fill();
+  
+    ctx.fillStyle = 'blue'; // 使用红色使控制点更加明显
+    ctx.beginPath();
+    srcControlPoints.forEach(point => {
+      ctx.moveTo(point.x, point.y);
+      ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+    });
+    ctx.fill(); */
 
   ctx.value.restore();
 };
