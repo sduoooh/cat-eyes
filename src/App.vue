@@ -1,5 +1,6 @@
 <template>
   <div class="cat-eyes-container">
+    <video ref="videoElement" autoplay muted style="display: none;"></video>
     <canvas ref="catEyesCanvas" :width="canvasWidth" :height="canvasHeight" style="background: #222626;"></canvas>
   </div>
 </template>
@@ -7,13 +8,12 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, shallowRef } from 'vue';
 
-// 全局渲染相关
+// 全局相关
 const animationFrameId = ref(null);
 const catEyesCanvas = ref(null);
 const ctx = shallowRef(null);
 const canvasWidth = ref(window.innerWidth);
 const canvasHeight = ref(window.innerHeight);
-
 
 // 静态渲染参数
 const eyeHeight = computed(() => canvasHeight.value * 0.42);
@@ -87,9 +87,15 @@ const backTraceSpeed = computed(() => eyeWidth.value / backTracePlannedTime);
 
 
 // 焦点动态获取-鼠标
-import { useMouse } from '@vueuse/core';
-const { x, y } = useMouse({ touch: false });
+/* import { useMouse } from '@vueuse/core';
+const { x, y } = useMouse(); */
 
+// 焦点动态获取-手势
+import { Hands as _Hands } from "@mediapipe/hands";
+import { Camera as _Camera } from "@mediapipe/camera_utils";
+const x = ref();
+const y = ref();
+const videoElement = ref(null);
 
 // 计时器函数 类似于setInterval
 const lastMark = ref({
@@ -173,6 +179,7 @@ const generateFocusPointTarget = () => {
       time: 0,
       reason: null
     };
+    markWork.value = () => { };
     isFocusLost.value = false;
   }
   return finalValidFocusPoint.value;
@@ -322,7 +329,56 @@ const countCount = () => {
       time: 0,
       reason: null
     };
+    markWork.value = () => { };
   };
+}
+
+const onResults = (results) => {
+  if (results.multiHandLandmarks.length === 0) {
+    x.value = undefined;
+    y.value = undefined;
+    return;
+  }
+  const dectedPoints = results.multiHandLandmarks[0].reduce((pre, cur) => {
+    return { x: pre.x + cur.x, y: pre.y + cur.y }
+  }, { x: 0.5, y: 0.5 })
+  x.value = dectedPoints.x / 21;
+  y.value = dectedPoints.y / 21;
+  x.value = initialFocusPoint.value.x - (x.value > 0.5 ? 1 : -1) * Math.abs(x.value - 0.5) * canvasWidth.value;
+  y.value = initialFocusPoint.value.y + (y.value > 0.5 ? 1 : -1) * Math.abs(y.value - 0.5) * canvasHeight.value;
+}
+
+
+const updateTargetByHandInit = () => {
+  const Hands = _Hands || window.Hands;
+  const Camera = _Camera || window.Camera;
+  const hands = new Hands({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }
+  });
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+  });
+  hands.onResults(onResults);
+  hands.initialize();
+  const camera = new Camera(videoElement.value, {
+    onFrame: async () => {
+      await hands.send({ image: videoElement.value });
+    },
+  });
+  camera.start()
+}
+
+const drawFocusPoint = () => {
+  ctx.value.fillStyle = 'rgb(255, 0, 0)';
+  ctx.value.beginPath();
+  ctx.value.arc(x.value, y.value, 10, 0, 2 * Math.PI);
+  ctx.value.fill();
+  ctx.value.restore();
 }
 
 const animate = () => {
@@ -330,12 +386,17 @@ const animate = () => {
   updateCanvasSize();
   updateBlinkStatus();
   drawCatEyes();
+  drawFocusPoint();
   animationFrameId.value = requestAnimationFrame(animate);
 }
+
 
 onMounted(() => {
   if (catEyesCanvas.value)
     ctx.value = catEyesCanvas.value.getContext('2d');
+  if (videoElement.value) {
+    updateTargetByHandInit();
+  }
   animate();
 });
 
